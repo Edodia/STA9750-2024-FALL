@@ -1,0 +1,13 @@
+Edosa's Website
+Hello
+
+Welcome to Edosa's professional website. I am an aspiring data analyst who is currently pursuing my MSBA at Baruch.
+
+## My Interests
+- Gaming
+- Biking
+- Star Wars
+- Finding new music
+
+## Connect with Me
+Here is the link to my [LinkedIn](http://www.linkedin.com/in/edosa-odia).
