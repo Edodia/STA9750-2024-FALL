@@ -67,8 +67,8 @@ perfect_episodes <- TITLE_RATINGS %>%
   inner_join(TITLE_EPISODES, by = "tconst")
 
 # Then, join with TITLE_BASICS to find the series each episode belongs to
-result <- perfect_episodes %>%
-  inner_join(TITLE_BASICS, by = c("parentTconst" = "tconst")) %>%
+result <- perfect_episodes |>
+  inner_join(TITLE_BASICS, by = c("parentTconst" = "tconst")) |>
   select(episode_tconst = "tconst", series_name = "primaryTitle", episode_name = "primaryTitle", rating = "averageRating", votes = "numVotes")
 
 # Print the result
@@ -78,16 +78,16 @@ print(result)
 # Star Wars: Episode IV - A New Hope
 #Star Wars: Episode VI - Return of the Jedi
 #Star Wars: Episode VIII - The Last Jedi
-mark_hamill_known_titles <- NAME_BASICS %>%
-  filter(primaryName == "Mark Hamill") %>%
-  pull(knownForTitles) %>%
-  strsplit(split = ",") %>%
+mark_hamill_known_titles <- NAME_BASICS |>
+  filter(primaryName == "Mark Hamill") |>
+  pull(knownForTitles) |>
+  strsplit(split = ",") |>
   unlist()
 
 # Use the extracted title IDs to get the names of these titles from TITLE_BASICS
-mark_hamill_projects <- TITLE_BASICS %>%
-  filter(tconst %in% mark_hamill_known_titles) %>%
-  select(primaryTitle)  # You can adjust this select statement to include more details if necessary
+mark_hamill_projects <- TITLE_BASICS |>
+  filter(tconst %in% mark_hamill_known_titles) |>
+  select(primaryTitle)  
 
 # Display the project names
 print(mark_hamill_projects)
@@ -145,7 +145,7 @@ ggplot(average_ratings_by_season, aes(x = as.numeric(seasonNumber), y = AverageR
 #Task2
 #1 Create a success measure. 
 
-TITLE_RATINGS <- TITLE_RATINGS %>%
+TITLE_RATINGS <- TITLE_RATINGS |>
   mutate(
     SuccessMetric = 0.7 * averageRating + 0.3 * log(numVotes + 1)
   )
@@ -165,26 +165,26 @@ top_movies |>
   select(tconst, primaryTitle, SuccessMetric) |>
   print()
 #2
-#
+
 #Choose 3-5 movies with large numbers of IMDb votes that score poorly on your success metric
 #These are all low quality movies and box office flops
 poor_scoring_movies <- ratings_with_titles |>
-  filter(numVotes > 100000) %>%  # Adjust this threshold as needed
+  filter(numVotes > 100000) |>  
   arrange(SuccessMetric) |>
   slice_head(n = 5)  # Select the bottom 5 movies based on the success metric
 
 # Display the relevant details of the selected movies
-poor_scoring_movies %>%
-  select(tconst, primaryTitle, averageRating, numVotes, SuccessMetric) %>%
+poor_scoring_movies |>
+  select(tconst, primaryTitle, averageRating, numVotes, SuccessMetric) |>
   print()
 #3
 #Lets see if Christopher Nolan has successful movies
-nolan_nconst <- NAME_BASICS %>%
-  filter(primaryName == "Christopher Nolan") %>%
+nolan_nconst <- NAME_BASICS |>
+  filter(primaryName == "Christopher Nolan") |>
   pull(nconst)
 
 # Get all titles where Nolan is listed as a director or writer
-nolan_titles <- TITLE_CREW %>%
+nolan_titles <- TITLE_CREW |>
   filter(directors %in% nolan_nconst | writers %in% nolan_nconst) |>
   select(tconst)
 
@@ -210,9 +210,9 @@ TITLE_BASICS <- TITLE_BASICS |>
   filter(startYear >= 1920, startYear <= 2020)
 
 # Join datasets and calculate Decade
-title_data <- TITLE_BASICS %>%
+title_data <- TITLE_BASICS |>
   inner_join(TITLE_RATINGS, by = "tconst") |>
-  mutate(Decade = floor(startYear / 10) * 10)  # Creating a Decade column from startYear
+  mutate(Decade = floor(startYear / 10) * 10)  # Decade column from startYear
 
 # Filter for success and calculate counts by decade and genre
 genre_successes_per_decade <- title_data |>
@@ -224,7 +224,7 @@ genre_successes_per_decade <- title_data |>
 
 # Identify the top genre per decade
 top_genre_per_decade <- genre_successes_per_decade |>
-  group_by(Decade) %>%
+  group_by(Decade) |>
   slice_max(order_by = SuccessCount, n = 1, with_ties = FALSE)
 
 # Visualize the results
@@ -239,7 +239,7 @@ ggplot(top_genre_per_decade, aes(x = as.factor(Decade), y = SuccessCount, fill =
 print(top_genre_per_decade)
 
 #genre change? A crime drama has been successful
-genre_trends <- TITLE_BASICS %>%
+genre_trends <- TITLE_BASICS |>
   inner_join(TITLE_RATINGS, by = "tconst") |>
   mutate(Decade = floor(startYear / 10) * 10) |>
   filter(Decade >= 1980, Decade <= 2020) |>  # Focus on recent decades
@@ -269,7 +269,7 @@ print(genre_popularity)
 current_year <- 2024
 
 # Filter for crime movies in TITLE_BASICS
-crime_movies <- TITLE_BASICS %>%
+crime_movies <- TITLE_BASICS |>
   filter(grepl("Crime", genres), titleType == "movie")
 
 # Join with TITLE_PRINCIPALS to find actors
@@ -278,17 +278,17 @@ crime_movie_actors <- TITLE_PRINCIPALS |>
   inner_join(crime_movies, by = "tconst")
 
 # Join with NAME_BASICS to get actor details and filter for those alive
-successful_crime_actors <- crime_movie_actors %>%
-  inner_join(NAME_BASICS, by = "nconst") %>%
+successful_crime_actors <- crime_movie_actors |>
+  inner_join(NAME_BASICS, by = "nconst") |>
   filter((deathYear == "\\N" | is.na(deathYear)) & 
            (birthYear == as.character(current_year - 35) | 
-              birthYear == as.character(current_year - 34)))  # Considering 25 or 26 years old for flexibility
+              birthYear == as.character(current_year - 34)))  
 
 # Join with TITLE_RATINGS to get success metrics
 actor_success_metrics <- successful_crime_actors |>
   inner_join(TITLE_RATINGS, by = "tconst") |>
   group_by(nconst, primaryName) |>
-  summarise(AverageRating = mean(averageRating), TotalVotes = sum(numVotes), .groups = "drop") %>%
+  summarise(AverageRating = mean(averageRating), TotalVotes = sum(numVotes), .groups = "drop") |>
   arrange(desc(AverageRating), desc(TotalVotes))
 
 # Select top young actor based on ratings and votes
@@ -305,7 +305,7 @@ final_top_actors <- bind_rows(top_young_crime_actor, top_crime_actors)
 
 # Print the results
 print(final_top_actors)
-#this does not help Im going to pick who i liked
+#this does not help I'm going to pick who i liked
 # Checking to see if taxi driver is good
 taxi_driver_details <- TITLE_BASICS |>
   inner_join(TITLE_RATINGS, by = "tconst") |>
