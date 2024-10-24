@@ -1,0 +1,351 @@
+---
+title: "IMDB Analysis"
+author: "Edosa Odia"
+editor: visual
+---
+
+# Introduction
+
+As a society we have been drawn to movies and television since the 1920's. This report seeks to provide a comprehensive analysis of film using data from IMDb. This report is divided into multiple sections or tasks : first, I will be providing a bunch of fun facts that one may be interested in. Secondly, I created my own custom success metric in order to evaluate movies, actors, and directors. Next, I will use that success metric to display trends in genre popularity. Lastly, (this is the fun part) I will pitch my own remake of a film. I hope you enjoy and be free to guess which film I will remake. Also, please note I have used pre-processed data sets from [the course repo](https://github.com/michaelweylandt/STA9750/tree/main/miniprojects/mini02_preprocessed/) which may affect the quality of some answers.
+
+## Set Up
+
+```{r}
+library(tidyverse)
+get_imdb_file <- function(fname){
+  BASE_URL <- "https://raw.githubusercontent.com/michaelweylandt/STA9750/main/miniprojects/mini02_preprocessed/"
+  fname_ext <- paste0(fname, ".csv.zip")
+  if(!file.exists(fname_ext)){
+    FILE_URL <- paste0(BASE_URL, fname_ext)
+    download.file(FILE_URL, 
+                  destfile = fname_ext)
+  }
+  as.data.frame(readr::read_csv(fname_ext, lazy=FALSE))
+}
+
+NAME_BASICS      <- get_imdb_file("name_basics_small")
+TITLE_BASICS     <- get_imdb_file("title_basics_small")
+TITLE_EPISODES   <- get_imdb_file("title_episodes_small")
+TITLE_RATINGS    <- get_imdb_file("title_ratings_small")
+TITLE_CREW       <- get_imdb_file("title_crew_small")
+TITLE_PRINCIPALS <- get_imdb_file("title_principals_small")
+
+
+#ensuring characters are numerical
+NAME_BASICS <- NAME_BASICS |>
+  mutate(birthYear = as.numeric(birthYear),
+         deathYear = as.numeric(deathYear))
+#TASK 1 Correct the column types of the TITLE tables using a combination of 
+#mutate and the coercion functions as.numeric and as.logical.
+TITLE_BASICS <- TITLE_BASICS |>
+  mutate(
+    startYear = as.numeric(startYear),
+    endYear = as.numeric(endYear),
+    runtimeMinutes = as.numeric(runtimeMinutes)
+  )
+TITLE_EPISODES <- TITLE_EPISODES |>
+  mutate(
+    seasonNumber = as.numeric(seasonNumber),
+    episodeNumber = as.numeric(episodeNumber)
+  )
+TITLE_PRINCIPALS <- TITLE_PRINCIPALS |>
+  mutate(
+    ordering = as.integer(ordering)
+  )
+glimpse(NAME_BASICS)
+NAME_BASICS |> separate_longer_delim(knownForTitles, ",") |> slice_head(n=10)
+```
+
+## Task 1: Let's answer some questions my professor is interested in.
+
+#### 1.How many movies are in our data set? How many TV series? How many TV episodes?
+
+```{r}
+TITLE_BASICS |>
+  group_by(titleType) |>
+  summarise(Count = n(), .groups = 'drop') |>
+  filter(titleType %in% c("movie", "tvSeries", "tvEpisode")) |>
+  print()
+```
+
+There are 116,458 movies, 129302 episodes, and 24,158 television series.
+
+#### 2. Who is the oldest living person in our data set?
+
+```{r}
+NAME_BASICS |>
+  filter(is.na(deathYear)) |>
+  arrange(birthYear) |>
+  slice_head(n = 1) |>
+  print()
+```
+
+Now this question was tricky and did require a google search. IMDb unfortunately has not reported the deaths of multiple people such as Zohrabai Ambalawali, Nemesio Antúnez, Mario Maffei , Mario Bertolazzi. Initially, my first answer was a man named Robert de Visee who had a birth year of 1600? That made absolutely no sense so I filtered more and researched through google and found out that Elisabeth Waldo is reported to be the oldest living actor at 105 years old.
+
+#### 3. There is one TV Episode in this data set with a perfect 10/10 rating and at least 200,000 IMDb ratings.  What is it? What series does it belong to?
+
+```{r}
+perfect_episodes <- TITLE_RATINGS |>
+  filter(averageRating == 10, numVotes >= 200000) |>
+  inner_join(TITLE_EPISODES, by = "tconst")
+result <- perfect_episodes |>
+  inner_join(TITLE_BASICS, by = c("parentTconst" = "tconst")) |>
+  select(episode_tconst = "tconst", series_name = "primaryTitle", episode_name = "primaryTitle", rating = "averageRating", votes = "numVotes")
+print(result)
+```
+
+Apparently, the best episode ever belongs to Breaking Bad a show I watched 5 episodes of and gave up.
+
+#### 4.  What four projects is the actor Mark Hamill most known for?
+
+```{r}
+mark_hamill_known_titles <- NAME_BASICS |>
+  filter(primaryName == "Mark Hamill") |>
+  pull(knownForTitles) |>
+  strsplit(split = ",") |>
+  unlist()
+mark_hamill_projects <- TITLE_BASICS |>
+  filter(tconst %in% mark_hamill_known_titles) |>
+  select(primaryTitle)
+print(mark_hamill_projects)
+```
+
+This is honestly something I knew beforehand as a major Star Wars fan. Mark Hamil played Luke Skywalker in the original trilogy and reprised his role in The Last Jedi. Fun fact: He is also known for voicing the Joker in Batman: The Animated Series.
+
+#### 5. What TV series, with more than 12 episodes, has the highest average rating?
+
+```{r}
+tv_series <- TITLE_BASICS |>
+  filter(titleType == "tvSeries")
+
+
+episode_counts <- TITLE_EPISODES |>
+  inner_join(tv_series, by = c("parentTconst" = "tconst")) |>
+  group_by(parentTconst) |>
+  summarise(episodeCount = n(), .groups = "drop")
+
+
+series_ratings <- episode_counts |>
+  filter(episodeCount > 12) |>
+  inner_join(TITLE_RATINGS, by = c("parentTconst" = "tconst"))
+
+
+highest_rated_series <- series_ratings |>
+  arrange(desc(averageRating)) |>
+  slice_head(n = 1)
+
+
+print(highest_rated_series)
+
+```
+
+This is interesting because I thought it would be Breaking Bad or Game of Thrones, or The Sopranos. However, the highest rated show with more than 12 episodes is Craft Games, a show about MineCraft. It has a series rating of 9.7 while Breaking bad has a series rating of 9.5.
+
+#### 6. Is it true that episodes from later seasons of *Happy Days* have lower average ratings than the early seasons?
+
+```{r}
+happy_days_tconst <- TITLE_BASICS |>
+  filter(titleType == "tvSeries" & primaryTitle == "Happy Days") |>
+  pull(tconst)
+
+
+happy_days_episodes <- TITLE_EPISODES |>
+  filter(parentTconst == happy_days_tconst)
+happy_days_ratings <- happy_days_episodes |>
+  inner_join(TITLE_RATINGS, by = "tconst")
+
+
+# Average ratings significantly dipped post season 6, 
+# however it took almost three seasons to reach above an average rating of 7.0
+average_ratings_by_season <- happy_days_ratings |>
+  group_by(seasonNumber) |>
+  summarise(AverageRating = mean(averageRating, na.rm = TRUE), .groups = "drop") |>
+  arrange(seasonNumber) 
+ggplot(average_ratings_by_season, aes(x = as.numeric(seasonNumber), y = AverageRating)) +
+  geom_line(group = 1) +
+  geom_point() +
+  theme_minimal() +
+  labs(title = "Average Ratings of 'Happy Days' by Season",
+       x = "Season Number",
+       y = "Average Rating")
+
+```
+
+I guess the saying is true then. Happy Days suffered a massive drop in ratings post season 6. It took the show almost three seasons to regain an average rating of 7.0.
+
+## **Task 3: Custom Success Metric: this is my specific way of measuring the success of a show or film**
+
+#### 1. Choose the top 5-10 movies on your metric and confirm that they were indeed box office successes.
+
+```{r}
+
+TITLE_RATINGS <- TITLE_RATINGS |>
+  mutate(
+    SuccessMetric = 0.7 * averageRating + 0.3 * log(numVotes + 1)
+  )
+
+
+
+
+```
+
+This is my metric of success. It involves two components : the average rating and the number of votes. The average rating has a higher weight in the formula at 0.7 because I value the quality of a title more then the audience engagement. This success metric will be very important to the rest of the analysis.
+
+#### 2. Choose the top 5-10 movies on your metric and confirm that they were indeed box office successes.
+
+```{r}
+ratings_with_titles <- TITLE_RATINGS |>
+  inner_join(TITLE_BASICS, by = "tconst") |>
+  filter(titleType == "movie")
+top_movies <- ratings_with_titles |>
+  arrange(desc(SuccessMetric)) |>
+  slice_head(n = 10) 
+top_movies |>
+  select(tconst, primaryTitle, SuccessMetric) %>%
+  print()
+```
+
+This code will provide you with some of the greatest movies which you should watch. Also, it helps to validate my success metric. Note: The focus for the rest of the report will be about movies.
+
+#### 4. Choose 3-5 movies with large numbers of IMDb votes that score poorly on your success metric and confirm that they are indeed of low quality.
+
+```{r}
+poor_scoring_movies <- ratings_with_titles |>
+  filter(numVotes > 100000) |>  
+  arrange(SuccessMetric) |>
+  slice_head(n = 5)  
+
+
+poor_scoring_movies |>
+  select(tconst, primaryTitle, averageRating, numVotes, SuccessMetric) |>
+  print()
+```
+
+This is another validity check. These are all terrible movies.
+
+#### 4. Choose a prestige actor or director and confirm that they have many projects with high scores on your success metric.
+
+```{r}
+#Lets see if Christopher Nolan has successful movies
+nolan_nconst <- NAME_BASICS |>
+  filter(primaryName == "Christopher Nolan") |>
+  pull(nconst)
+
+
+nolan_titles <- TITLE_CREW |>
+  filter(directors %in% nolan_nconst | writers %in% nolan_nconst) |>
+  select(tconst)
+
+
+nolan_projects_with_ratings <- nolan_titles |>
+  inner_join(TITLE_BASICS, by = "tconst") |>
+  filter(titleType == "movie") |>  
+  inner_join(TITLE_RATINGS, by = "tconst") |>
+  arrange(desc(SuccessMetric))
+
+
+top_nolan_projects <- nolan_projects_with_ratings |>
+  filter(SuccessMetric > 7)  
+
+
+print(top_nolan_projects)
+```
+
+Nolan does have multiple successful movies such as : Inception, The Dark Knight, Interstellar. Note that a successful movie will have a success metric of at least 7 or higher.
+
+## **Task 4: Trends in Success Over Time: Identifying a Genre**
+
+#### 1. What was the genre with the most “successes” in each decade? 
+
+```{r}
+TITLE_BASICS <- TITLE_BASICS |>
+  mutate(startYear = as.numeric(startYear)) |>
+  filter(startYear >= 1920, startYear <= 2020)
+
+
+title_data <- TITLE_BASICS |>
+  inner_join(TITLE_RATINGS, by = "tconst") |>
+  mutate(Decade = floor(startYear / 10) * 10)  
+
+
+genre_successes_per_decade <- title_data |>
+  filter(SuccessMetric > 7) |>
+  separate_rows(genres, sep = ",") |>
+  group_by(Decade, genres) |>
+  summarise(SuccessCount = n(), .groups = "drop") |>
+  arrange(Decade, desc(SuccessCount))
+
+
+top_genre_per_decade <- genre_successes_per_decade |>
+  group_by(Decade) |>
+  slice_max(order_by = SuccessCount, n = 1, with_ties = FALSE)
+
+
+ggplot(top_genre_per_decade, aes(x = as.factor(Decade), y = SuccessCount, fill = genres)) +
+  geom_col(show.legend = TRUE) +
+  labs(title = "Top Genre by Decade Based on Success Metric (1920-2020)",
+       x = "Decade",
+       y = "Number of Successful Titles",
+       fill = "Genre")
+
+
+print(top_genre_per_decade)
+
+```
+
+The drama category has been consistently reliable and has produced the most hits out of any genre. This may be due to unreliable grouping by IDMb, which causes many movies to have two or more genres; one of which is typically "drama". Nonetheless, dramas have been the most popular and successful form of film throughout the decades.
+
+#### 4.What genre has become more popular in recent years? 
+
+```{r}
+genre_trends <- TITLE_BASICS |>
+  inner_join(TITLE_RATINGS, by = "tconst") |>
+  mutate(Decade = floor(startYear / 10) * 10) |>
+  filter(Decade >= 1980, Decade <= 2020) |>  
+  separate_rows(genres, sep = ",") 
+
+
+genre_popularity <- genre_trends |>
+  filter(SuccessMetric > 7) |>
+  group_by(Decade, genres) |>
+  summarise(SuccessCount = n(), .groups = "drop") |>
+  arrange(genres, Decade)
+
+ggplot(genre_popularity, aes(x = as.factor(Decade), y = SuccessCount, group = genres, color = genres)) +
+  geom_line() +
+  geom_point() +
+  theme_minimal() +
+  labs(title = "Trends in Genre Popularity (1980-2020)",
+       x = "Decade",
+       y = "Number of Successful Titles",
+       color = "Genre")
+
+
+print(genre_popularity)
+```
+
+Now, this is also interesting. This graph shows the rise of many genres from 1980 to 2020 and recently it has been shown that crime movies have been on the rise. I believe people tend to like crime dramas.
+
+## Task 5: Choosing a classic to reboot.
+
+#### 1. Check to see if choice is viable.
+
+```{r}
+taxi_driver_details <- TITLE_BASICS |>
+  inner_join(TITLE_RATINGS, by = "tconst") |>
+  filter(tconst == "tt0075314") |>
+  select(tconst, primaryTitle, averageRating, numVotes, SuccessMetric) 
+print(taxi_driver_details)
+```
+
+No surprise here, Taxi Driver has a great success metric at 9.8. It seems to be viable to make a Taxi Driver reboot.
+
+## **Task 6: Key Personnel** : Lets start building the cast for our movie.
+
+My plan is to have Christopher Nolan directing, with Martin Scorcese as an advisor. I would like Robert Pattinson to play the modern lead of Travis Bickle. Bella Ramsey to play modern Iris and Maude Apatow to play modern day Betsy. Lastly modern Charles Palantine will be played by Jon Hamm. Also a cameo of old Travis Bickle By De Niro is the cherry on top.
+
+## Initial Pitch. 
+
+Hello, this is my pitch of a modern retelling of Taxi Driver. Taxi Driver is considered to be one fo the best movies of all time and it is backed by its high success metric of 9.8. I envision a modern retelling of Taxi Driver where a new main character (Patttinson) is an UBER driver in NYC who has idolized Travis Bickle and wishes to follow in his footsteps. Over time due to the mundane nature of his career, and feeling of inadequacy he progessively become more neurotic and delves deeper into fanaticism.
+
+Crime Dramas have become a trend since 2000 and while it may be oversaturated this is a great way to shake things up in this political climate. Having the new Travis actually shoot and assassinate a political figure (Hamm) would be a horrifying and wonderful thing to watch. More importantly though political violence grabs attention. Also, having him play vigilante and save a child prostitute (Ramsey) would help to humanize a neurotic man. With Nolan at the helm who has worked on the wildly successful The Dark Knight and Martin Scorcese playing advisor, there is no doubt that this will be a great movie.
