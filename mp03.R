@@ -1,25 +1,8 @@
----
-title: "Election Analysis"
-author: "Edosa Odia"
-editor: visual
----
-
-As Americans one of our constitutional rights is us being able to vote and pick our president. However, the process of the President being voted in is not that simple. There is a system called the electoral college which allots a state with a certain amount of electoral votes, in which the president nominee needs to obtain 279 of to win the election. The amount of votes a state has is based off of the amount of congressional districts they have plus two. So lets say a state has one congressional district they will only have three electoral votes. Typically, the electoral votes of a state is given to the nominee who obtained the majority of general population votes, however there are exceptions. This analysis will delve in to the 2000 election where Al Gore infamously lost the election due to the electoral college despite having the lead in the general population votes by almost half a million.
-
-## Task 1: Downloading Data and Necessary Packages
-
-Note: The code to download the data will be a little lengthy, but follow and it should allow you to access all the data used.
-
-```{r}
-#These are the packages that will be used
 library(tidyverse)
 library(dplyr)
 library(ggplot2)
 library(DT)
 library(sf)
-```
-
-```{r}
 MIT_House_Data <- read.csv("~/Downloads/dataverse_files/1976-2022-house.csv")
 Presidential_Vote_Count <- read.csv("~/Downloads/1976-2020-president.csv")
 #geting congressional map
@@ -104,42 +87,29 @@ census_sf <- c(
 # Get shapefiles
 shapefiles <- get_census_sf(census_sf)
 
-```
+#Task3
+seats_1976 <- MIT_House_Data %>% filter(year == 1976) %>% group_by(state) %>% summarise(Seats_1976 = n_distinct(district))
+seats_2022 <- MIT_House_Data %>% filter(year == 2022) %>% group_by(state) %>% summarise(Seats_2022 = n_distinct(district))
 
-## 
+# Combine the data and calculate net change
+seat_changes <- left_join(seats_1976, seats_2022, by = "state")
+seat_changes <- seat_changes %>% mutate(Net_Change = Seats_2022 - Seats_1976)
 
-## Task 3
+# Order data for plotting
+seat_changes <- seat_changes %>% arrange(desc(Net_Change))
 
-1.  Which states have gained and lost the most seats in the US House of Representatives between 1976 and 2022?
+# Plotting the results
+ggplot(seat_changes, aes(x = reorder(state, Net_Change), y = Net_Change, fill = Net_Change > 0)) +
+  geom_col() +
+  coord_flip() +  # Flip the coordinates to make it easier to read the state names
+  labs(title = "Net Change in U.S. House Seats from 1976 to 2022",
+       x = "State",
+       y = "Net Change in Seats") +
+  scale_fill_manual(name = "Change Type", values = c("red", "blue"), labels = c("Loss", "Gain")) +
+  theme_minimal()
 
-    ```{r}
-    seats_1976 <- MIT_House_Data %>% filter(year == 1976) %>% group_by(state) %>% summarise(Seats_1976 = n_distinct(district))
-    seats_2022 <- MIT_House_Data %>% filter(year == 2022) %>% group_by(state) %>% summarise(Seats_2022 = n_distinct(district))
+#2
 
-    # Combine the data and calculate net change
-    seat_changes <- left_join(seats_1976, seats_2022, by = "state")
-    seat_changes <- seat_changes %>% mutate(Net_Change = Seats_2022 - Seats_1976)
-
-    # Order data for plotting
-    seat_changes <- seat_changes %>% arrange(desc(Net_Change))
-
-    # Plotting the results
-    ggplot(seat_changes, aes(x = reorder(state, Net_Change), y = Net_Change, fill = Net_Change > 0)) +
-      geom_col() +
-      coord_flip() +  
-      labs(title = "Net Change in U.S. House Seats from 1976 to 2022",
-           x = "State",
-           y = "Net Change in Seats") +
-      scale_fill_manual(name = "Change Type", values = c("red", "blue"), labels = c("Loss", "Gain")) +
-      theme_minimal()
-
-    ```
-
-As we can see from the graph the blue represents the positive change while the red represents a loss. States such as as New York, Pennsylvania, New Jersey, Connecticut, and Illinois have all lost a substantial amount of votes. On the other hand Texas, Florida, California, Nevada, Utah, and Arizona have all gained votes. It is in interesting that many Northeast states have lost votes. Is this due to population changes within the states?
-
-#### 2. Are there any elections in our data where the election would have had a different outcome if the “fusion” system was not used and candidates only received the votes their received from their “major party line” (Democrat or Republican) and not their total number of votes across all lines?
-
-```{r}
 election_results <- MIT_House_Data %>%
   group_by(year, state, district, candidate) %>%
   summarise(Total_Votes = sum(candidatevotes),
@@ -168,24 +138,64 @@ discrepancy_analysis <- winners_by_total %>%
 # Render the results as a datatable
 datatable(discrepancy_analysis, options = list(pageLength = 10), 
           caption = "Discrepancies in Election Outcomes Based on Voting Systems")
-```
+#3
+library(dplyr)
+library(readr)
 
-Here lies a datatable that displays the candidate totals. If you filter for New York it seems that multiple elections would have a different outcome if they accounted for all votes, not just major party votes. i support this as it allows minor parties a say.
 
-## Importing and plotting shapefile data
+# Prepare Presidential data: filter, group, and summarize
+presidential_grouped <- Presidential_Vote_Count %>%
+  filter(party_simplified %in% c("DEMOCRAT", "REPUBLICAN")) %>%
+  group_by(year, state, party = party_simplified) %>%
+  summarise(total_party_votes_president = sum(candidatevotes), .groups = 'drop')
 
-```{r}
+# Prepare House data: filter, group, and summarize
+house_grouped <- MIT_House_Data %>%
+  filter(party %in% c("DEMOCRAT", "REPUBLICAN")) %>%
+  group_by(year, state, party) %>%
+  summarise(total_party_votes_house = sum(candidatevotes), .groups = 'drop')
+merged_data <- left_join(presidential_grouped, house_grouped, by = c("year", "state", "party"))
+
+# Calculate the difference in votes
+merged_data <- merged_data %>%
+  mutate(vote_difference = total_party_votes_president - total_party_votes_house)
+ggplot(merged_data, aes(x = year, y = vote_difference, color = party, group = party)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Vote Difference Over Time by Party",
+       x = "Year",
+       y = "Vote Difference (Presidential - Congressional)") +
+  theme_minimal() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red")  
+recent_year_data <- merged_data %>%
+  filter(year == 2020)
+
+ggplot(recent_year_data, aes(x = reorder(state, vote_difference), y = vote_difference, fill = party)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  coord_flip() +
+  labs(title = "State-by-State Vote Difference in 2020",
+       x = "State",
+       y = "Vote Difference (Presidential - Congressional)") +
+  theme_minimal()
+ggplot(merged_data, aes(x = party, y = vote_difference, fill = party)) +
+  geom_boxplot() +
+  labs(title = "Comparison of Vote Differences Across Parties",
+       x = "Party",
+       y = "Vote Difference (Presidential - Congressional)") +
+  theme_minimal()
+library(sf)
+# Define the function to read a shapefile from a zip archive
 read_shp_from_zip <- function(zip_filename) {
-
+  # Create a temporary directory to extract files
   temp_dir <- tempdir()
   
- 
+  # Extract the contents of the zip file to the temporary directory
   zip_contents <- unzip(zip_filename, exdir = temp_dir)
   
- 
+  # Find the shapefile (.shp) among the extracted files
   fname_shp <- zip_contents[grepl("\\.shp$", zip_contents)]
   
-  # Read the shapefile 
+  # Read the shapefile using read_sf and return the resulting object
   if (length(fname_shp) > 0) {
     nyc_sf <- read_sf(fname_shp)
     return(nyc_sf)
@@ -194,12 +204,14 @@ read_shp_from_zip <- function(zip_filename) {
   }
 }
 
+# Example usage:
+# Assuming you've downloaded and named your file "nyc_borough_boundaries.zip"
 if (!file.exists("nyc_borough_boundaries.zip")) {
   download.file("https://data.cityofnewyork.us/api/geospatial/tqmj-j8zm?method=export&format=Shapefile", 
                 destfile="nyc_borough_boundaries.zip")
 }
 
-
+# Read the shapefile from the zip
 nyc_sf <- read_shp_from_zip("nyc_borough_boundaries.zip")
 ggplot(nyc_sf, 
        aes(geometry=geometry)) + 
@@ -208,11 +220,7 @@ ggplot(nyc_sf,
        aes(geometry=geometry, 
            fill = shape_area)) + 
   geom_sf()
-```
-
-## 2000 Presidential Election Map
-
-```{r}
+#
 election_2000 <- Presidential_Vote_Count %>%
   filter(year == 2000, party_simplified %in% c("DEMOCRAT", "REPUBLICAN")) %>%
   group_by(state) %>%
@@ -238,29 +246,83 @@ unique(cd106$state)
 unique(election_2000$state)
 election_map_data <- merge(cd106, election_2000, by = "state")
 
+# Check the results of the merge to ensure it's populated correctly
 ggplot(data = election_map_data) +
   geom_sf(aes(fill = party), lwd = 0.1) +
   scale_fill_manual(values = c("DEMOCRAT" = "blue", "REPUBLICAN" = "red")) +
   labs(title = "2000 Presidential Election Results by Congressional District",
        subtitle = "Colors represent the winning party by state",
        fill = "Winning Party") +
-  coord_sf(xlim = c(-130, -65), ylim = c(25, 50), expand = FALSE) +  
+  coord_sf(xlim = c(-130, -65), ylim = c(25, 50), expand = FALSE) +  # Adjust these limits as needed
   theme_minimal() +
   theme(axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank())
-```
+#Task 7
+total_ec_votes <- function(state) {
+  state_ecvs <- c(AL = 9, AK = 3, AZ = 8, AR = 6, CA = 54, CO = 8, CT = 8, DE = 3,
+                  DC = 3, FL = 25, GA = 13, HI = 4, ID = 4, IL = 22, IN = 12, IA = 7,
+                  KS = 6, KY = 8, LA = 9, ME = 4, MD = 10, MA = 12, MI = 18, MN = 10,
+                  MS = 7, MO = 11, MT = 3, NE = 5, NV = 4, NH = 4, NJ = 15, NM = 5,
+                  NY = 33, NC = 14, ND = 3, OH = 21, OK = 8, OR = 7, PA = 23, RI = 4,
+                  SC = 8, SD = 3, TN = 11, TX = 32, UT = 5, VT = 3, VA = 13, WA = 11,
+                  WV = 5, WI = 11, WY = 3)
+  return(state_ecvs[state])
+}
 
-This displays a chloropleth map of the United States during the 2000 presidential election. Using the <http://cdmaps.polisci.ucla.edu> data I extracted the 106th congressional session which translates to the 2000 election. Red is for Republican, and Blue is democrat. It is understandable to see this and it is funny how this map rarely changes except for a few stats such as Pennsylvania.
+# State-Wide Winner-Take-All
+state_wide_winner_take_all <- function(data) {
+  data %>%
+    group_by(state) %>%
+    summarise(winner = candidate[which.max(candidatevotes)],
+              ec_votes = total_ec_votes(state)) %>%
+    ungroup()
+}
 
-## Electoral College Vote Allocation Strategies
+# State-Wide Proportional
+state_wide_proportional <- function(data) {
+  data %>%
+    group_by(state, candidate) %>%
+    summarise(proportional_ec_votes = round(total_ec_votes(state) * (candidatevotes / sum(candidatevotes))),
+              .groups = 'drop') %>%
+    ungroup()
+}
 
-There are four different electoral college vote strategies
+# National Proportional
+national_proportional <- function(data) {
+  total_votes <- sum(data$candidatevotes)
+  total_ec_votes <- sum(total_ec_votes(data$state))
+  data %>%
+    group_by(candidate) %>%
+    summarise(proportional_national_ec_votes = round(total_ec_votes * (sum(candidatevotes) / total_votes)),
+              .groups = 'drop') %>%
+    ungroup()
+}
+data_2000 <- Presidential_Vote_Count %>% 
+  filter(year == 2000)
 
-1.  State-Wide Winner-Take-All
+# Calculate electoral votes under different schemes
+results_swwta <- state_wide_winner_take_all(data_2000)
+results_swp <- state_wide_proportional(data_2000)
+results_np <- national_proportional(data_2000)
 
-2.  District-Wide Winner-Take-All + State-Wide “At Large” Votes
+# Combine results for comparison
+combined_results <- bind_rows(
+  results_swwta %>% mutate(method = "State-Wide Winner-Take-All"),
+  results_swp %>% mutate(method = "State-Wide Proportional"),
+  results_np %>% mutate(method = "National Proportional")
+)
+summary(combined_results$proportional_national_ec_votes)
 
-3.  State-Wide Proportional
+# Filter out small third-party candidates to focus on main candidates
+combined_results <- combined_results %>%
+  filter(candidate %in% c("Bush", "Gore"))
 
-4.  National Proportional
-
-    Most commonly used is the first selection State-Wide Winner-Take-All. This selection helped award the presidency to twice in two decades. First it cost Al Gore the election in 2000 when he lost the election due to the lack electoral votes that he possessed. Then 16 years later this happened again with Hilary Clinton as she lost the election to Donald Trump due to not having as many electoral college votes to secure the election. If the countrywide standard was the National Proportional then the elections would be flipped to Gore's and Clinton's favor. Should the State Wide Winner Takes All system should be abolished and replaced with a National Proportional system? It is a reoccurring discussion, do you favor the interests of the majority or do you take away the voting power of smaller states and give it to the larger states with a larger population.
+# Recreate the plot with potential adjustments
+ggplot(combined_results, aes(x = candidate, y = proportional_national_ec_votes, fill = method)) +
+  geom_col(position = position_dodge(), width = 0.7) +
+  labs(title = "2000 Presidential Election Analysis: Electoral Vote Allocations",
+       x = "Candidate",
+       y = "Electoral Votes",
+       fill = "Method") +
+  scale_y_continuous(labels = scales::comma) +  # Ensure y-axis is properly scaled
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Improve text alignment if needed
