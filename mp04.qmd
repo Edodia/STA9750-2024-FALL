@@ -1,0 +1,18 @@
+---
+title: "CUNY Retirement Plans: Which One is Best?"
+author: "Edosa Odia"
+editor: visual
+---
+
+# Introduction
+
+Hello all, to my last mini project of the Fall semester of 2024. My focus is on retirement, a topic that scares many people including our own teachers at CUNY. CUNY teachers are offered two different permanent retirement plans that they must choose shortly after they are hired: The Teacher's Retirement System (TRS) or the Optional Retirement Plan (ORP). Using historical data such as wage growth and inflation accessed via Alpha Vantage & FRED API's I have employed a Monte Carlo simulation in order to see which one is the better choice under a classic 20 year career and 20 year retirement simulation.. Thank you I hope you enjoy!
+
+### Step 1: Installing and loading necessary packages
+
+```{}
+```
+
+These will be all of the packages used in this analysis. Note: The use of httr2 is extremely important as you will not be able to access API's without it.
+
+### 
