@@ -1,0 +1,376 @@
+---
+title: "Retirement Analysis"
+author: "Edosa Odia"
+editor: visual
+code-fold: true
+code-copy: true
+code-block-border-left: true
+---
+
+# Introduction
+
+Hello all, to my last mini project of the Fall semester of 2024. My focus is on retirement, a topic that scares many people including our own teachers at CUNY. CUNY teachers are offered two different permanent retirement plans that they must choose shortly after they are hired: The Teacher's Retirement System (TRS) or the Optional Retirement Plan (ORP). Using historical data such as wage growth and inflation accessed via Alpha Vantage & FRED API's I have employed multiple simulations in order to see which one is the better choice under a classic 20 year career and 20 year retirement simulation.. Thank you, I hope you enjoy!
+
+## Step 1: Installing and loading necessary packages
+
+```{r}
+library(httr2)
+library(tidyverse)
+library(lubridate)
+library(DT)
+library(ggplot2)
+```
+
+These will be all of the packages used in this analysis. Note: The use of httr2 is extremely important as you will not be able to access API's without it.
+
+## Step 2: Accessing the API's
+
+```{r}
+alpha_api_key <- Sys.getenv("ALPHA_VANTAGE_API_KEY")
+fred_api_key <- Sys.getenv("FRED_API_KEY")
+
+```
+
+In order to access the data from [Alpha Vantage](https://www.alphavantage.co/support/#api-key) and the [FRED](https://fredaccount.stlouisfed.org/login/secure/) you need to have your own API keys. You can access that clicking on the links above. When accessing the keys in your environment you can do it in two ways: .Renviron or Sys.setenv. If you are using the keys in a report such as this .Renviron is a better alternative.
+
+## Step 3: Accessing data (Note: this will be very long)
+
+```{r}
+wage_growth_response <- request("https://api.stlouisfed.org/fred/series/observations") %>%
+req_url_query(
+  series_id = "CES0500000003",
+  api_key = fred_api_key,
+  file_type = "json"
+) %>%
+  req_perform()
+
+wage_growth_data <- wage_growth_response %>%
+  resp_body_json() %>%
+  pluck("observations") %>%
+  map_dfr(as_tibble) %>%
+  mutate(date = as.Date(date), value = as.numeric(value))
+
+wage_growth_data <- wage_growth_data %>%
+  arrange(date) %>%  # Ensure data is sorted by date
+  mutate(
+    wage_growth_rate = (value - lag(value)) / lag(value) * 100  # Percentage change
+  )
+
+# Inspect the first few rows
+head(wage_growth_data)
+# inflation
+inflation_response <- request("https://api.stlouisfed.org/fred/series/observations") %>%
+  req_url_query(
+    series_id = "CPIAUCSL",
+    api_key = fred_api_key,
+    file_type = "json"
+  ) %>%
+  req_perform()
+
+inflation_data <- inflation_response %>%
+  resp_body_json() %>%
+  pluck("observations") %>%
+  map_dfr(as_tibble) %>%
+  mutate(date = as.Date(date), value = as.numeric(value))
+
+inflation_data <- inflation_data %>%
+  arrange(date) %>%  # Ensure data is sorted by date
+  mutate(
+    inflation_rate = (value - lag(value)) / lag(value) * 100  # Percentage change
+  )
+#Bond market
+bond_market_response <- request("https://api.stlouisfed.org/fred/series/observations") %>%
+  req_url_query(
+    series_id = "DGS10",
+    api_key = fred_api_key,
+    file_type = "json"
+  ) %>%
+  req_perform()
+
+bond_market_data <- bond_market_response %>%
+  resp_body_json() %>%
+  pluck("observations") %>%
+  map_dfr(as_tibble) %>%
+  mutate(date = as.Date(date), value = as.numeric(value))
+#short term debt
+short_term_debt_response <- request("https://api.stlouisfed.org/fred/series/observations") %>%
+  req_url_query(
+    series_id = "TB3MS",
+    api_key = fred_api_key,
+    file_type = "json"
+  ) %>%
+  req_perform()
+
+short_term_debt_data <- short_term_debt_response %>%
+  resp_body_json() %>%
+  pluck("observations") %>%
+  map_dfr(as_tibble) %>%
+  mutate(date = as.Date(date), value = as.numeric(value))
+
+# US returns
+us_equity_response <- request("https://www.alphavantage.co/query") %>%
+req_url_query(
+  `function` = "TIME_SERIES_MONTHLY",
+  symbol = "SPY",
+  apikey = alpha_api_key
+) %>%
+  req_perform()
+
+us_equity_data <- us_equity_response %>%
+  resp_body_json() %>%
+  pluck("Monthly Time Series") %>%
+  map_dfr(as_tibble, .id = "date") %>%
+  rename(
+    open = `1. open`, high = `2. high`, low = `3. low`, close = `4. close`,
+    volume = `5. volume`
+  ) %>%
+  mutate(date = as.Date(date), adjusted_close = as.numeric(close))
+
+#Int returns
+intl_equity_response <- request("https://www.alphavantage.co/query") %>%
+  req_url_query(
+    `function` = "TIME_SERIES_MONTHLY",
+    symbol = "EFA",
+    apikey = alpha_api_key
+  ) %>%
+  req_perform()
+
+intl_equity_data <- intl_equity_response %>%
+  resp_body_json() %>%
+  pluck("Monthly Time Series") %>%
+  map_dfr(as_tibble, .id = "date") %>%
+  rename(
+    open = `1. open`, high = `2. high`, low = `3. low`, close = `4. close`,
+    volume = `5. volume`
+  ) %>%
+  mutate(date = as.Date(date), adjusted_close = as.numeric(close))
+
+#monthly validation check
+# Validate monthly data
+check_monthly_frequency <- function(data) {
+  return(length(unique(format(data$date, "%Y-%m"))) == nrow(data))
+}
+
+list(
+  Wage_Growth = check_monthly_frequency(wage_growth_data),
+  Inflation = check_monthly_frequency(inflation_data),
+  Bond_Market = check_monthly_frequency(bond_market_data),
+  Short_Term_Debt = check_monthly_frequency(short_term_debt_data),
+  US_Equity = check_monthly_frequency(us_equity_data),
+  Intl_Equity = check_monthly_frequency(intl_equity_data)
+)
+
+```
+
+Using the API keys and dplyr I have been able pull data from the two Alpha Vantage and the FRED and formulate it into six distinct tables : wage growth, inflation, us_equity, international equity, bond market, and short_term_debt. Note that all data has been modified to show monthly frequencies with the exception of the bond market table.
+
+## Step 4: Calculating long run averages and variance
+
+```{r}
+#Part 4
+# Compute Long-Run Averages and variance in a datatable
+## Calculate Long-Run Averages and Variances
+summary_table <- data.frame(
+  Series = c("Wage Growth", "Inflation", "US Equity", "International Equity", "Bond Market", "Short-Term Debt"),
+  Long_Run_Average = c(
+    mean(wage_growth_data$wage_growth_rate, na.rm = TRUE),  # Use wage_growth_rate
+    mean(inflation_data$inflation_rate, na.rm = TRUE),      # Use inflation_rate
+    mean(us_equity_data$adjusted_close, na.rm = TRUE),
+    mean(intl_equity_data$adjusted_close, na.rm = TRUE),
+    mean(bond_market_data$value, na.rm = TRUE),
+    mean(short_term_debt_data$value, na.rm = TRUE)
+  ),
+  Variance = c(
+    var(wage_growth_data$wage_growth_rate, na.rm = TRUE),   # Use wage_growth_rate
+    var(inflation_data$inflation_rate, na.rm = TRUE),       # Use inflation_rate
+    var(us_equity_data$adjusted_close, na.rm = TRUE),
+    var(intl_equity_data$adjusted_close, na.rm = TRUE),
+    var(bond_market_data$value, na.rm = TRUE),
+    var(short_term_debt_data$value, na.rm = TRUE)
+  )
+)
+
+# Display the Summary Table with DT
+library(DT)
+datatable(
+  summary_table,
+  options = list(pageLength = 5, autoWidth = TRUE),
+  caption = "Summary Table of Long-Run Averages and Variances (Inflation and Wage Growth Rate Adjusted)"
+)
+
+```
+
+Using the data tables i was able to generate long run averages, and variances for each table. With the sole exception of short term debt. These averages will help in the next steps of my analysis.
+
+## Step 5: Historical Comparison
+
+```{r}
+#task 5
+# Initialize parameters
+starting_salary <- 50000
+years <- 20  # 20-year career
+projected_salary <- numeric(years)
+projected_salary[1] <- starting_salary
+
+# Use average wage growth rate
+average_wage_growth <- mean(wage_growth_data$wage_growth_rate, na.rm = TRUE) / 100
+
+# Project salary for 20 years
+for (t in 2:years) {
+  projected_salary[t] <- projected_salary[t - 1] * (1 + average_wage_growth)
+}
+
+# View the projected salary
+projected_salary
+
+# Final Average Salary (FAS)
+fas <- mean(tail(projected_salary, 3))
+
+# TRS parameters
+benefit_multiplier <- 0.02  # 2%
+years_of_service <- years
+
+# TRS Benefit
+trs_benefit <- years_of_service * fas * benefit_multiplier
+
+trs_benefit
+
+# ORP parameters
+employee_contribution_rate <- 0.05  # 5%
+employer_contribution_rate <- 0.08  # 8%
+investment_return <- 0.06  # 6% annual return
+
+# Initialize ORP balance
+orp_balance <- 0
+
+# Calculate ORP retirement balance
+for (t in 1:years) {
+  yearly_contribution <- projected_salary[t] * (employee_contribution_rate + employer_contribution_rate)
+  orp_balance <- orp_balance * (1 + investment_return) + yearly_contribution
+}
+
+orp_balance
+comparison <- data.frame(
+  Plan = c("TRS", "ORP"),
+  Value = c(trs_benefit, orp_balance)
+)
+
+# Display the table using DT
+library(DT)
+datatable(comparison, options = list(pageLength = 5, autoWidth = TRUE),
+          caption = "Comparison of TRS and ORP Retirement Benefits (20-Year Career)")
+library(ggplot2)
+
+ggplot(comparison, aes(x = Plan, y = Value, fill = Plan)) +
+  geom_bar(stat = "identity") +
+  labs(
+    title = "Comparison of TRS and ORP Retirement Benefits (20-Year Career)",
+    x = "Retirement Plan",
+    y = "Benefit Value ($)"
+  ) +
+  theme_minimal() +
+  scale_fill_manual(values = c("steelblue", "darkorange")) +
+  geom_text(aes(label = round(Value, 2)), vjust = -0.5)
+#Looks like the orp beats out the trs heavily
+
+```
+
+First I would like to establish the parameters set. I assumed that the CUNY employee would start out at a salary of \\\$50,000. Using the average wage growth I calculated a possible potential salary not accounting for possible promotions within 20 years. Under the TRS's benefit system it seems that the employee is in a worse position than the ORP's compound investment system.
+
+## Task 6: Fixed-Rate Analysis
+
+```{r}
+#Task6:
+# TRS parameters
+retirement_age <- 65
+death_age <- 85
+years_retired <- death_age - retirement_age
+cola <- mean(inflation_data$inflation_rate, na.rm = TRUE) / 100  # Average inflation rate
+
+# Project TRS monthly benefit over retirement
+trs_monthly_benefits <- numeric(years_retired * 12)
+trs_monthly_benefits[1] <- trs_benefit / 12  # Initial monthly benefit
+for (t in 2:length(trs_monthly_benefits)) {
+  trs_monthly_benefits[t] <- trs_monthly_benefits[t - 1] * (1 + cola)
+}
+# ORP parameters
+initial_balance <- orp_balance
+withdrawals_per_year <- years_retired
+annual_withdrawal <- initial_balance / withdrawals_per_year  # Equal annual withdrawals
+investment_return <- mean(wage_growth_data$wage_growth_rate, na.rm = TRUE) / 100
+
+# Project ORP balance and withdrawals
+orp_balance_projection <- numeric(years_retired)
+orp_balance_projection[1] <- initial_balance
+orp_withdrawals <- numeric(years_retired)
+
+for (t in 1:years_retired) {
+  if (t == 1) {
+    orp_withdrawals[t] <- annual_withdrawal
+    orp_balance_projection[t] <- initial_balance - annual_withdrawal
+  } else {
+    orp_balance_projection[t] <- orp_balance_projection[t - 1] * (1 + investment_return) - annual_withdrawal
+    orp_withdrawals[t] <- annual_withdrawal
+  }
+}
+
+orp_balance_projection
+orp_withdrawals
+# Convert ORP annual withdrawal to monthly
+orp_monthly_withdrawals <- rep(orp_withdrawals / 12, each = 12)
+
+# Calculate monthly income gaps
+income_gaps <- abs(trs_monthly_benefits - orp_monthly_withdrawals)
+
+# Summary statistics
+summary <- data.frame(
+  Metric = c("Average Monthly Income (TRS)", "Average Monthly Income (ORP)",
+             "Maximum Income Gap", "Minimum Income Gap", "Funds Remaining (ORP)"),
+  Value = c(
+    mean(trs_monthly_benefits),
+    mean(orp_monthly_withdrawals),
+    max(income_gaps),
+    min(income_gaps),
+    max(orp_balance_projection)  # ORP funds left at death
+  )
+)
+
+summary
+
+# Create a time vector for plotting
+time <- seq(1, length(trs_monthly_benefits), by = 1)
+# TRS vs ORP Monthly Income
+income_data <- data.frame(
+  Time = time,
+  TRS = trs_monthly_benefits,
+  ORP = orp_monthly_withdrawals
+)
+
+ggplot(income_data, aes(x = Time)) +
+  geom_line(aes(y = TRS, color = "TRS")) +
+  geom_line(aes(y = ORP, color = "ORP")) +
+  labs(
+    title = "Comparison of TRS and ORP Monthly Income",
+    x = "Months in Retirement",
+    y = "Monthly Income ($)"
+  ) +
+  scale_color_manual(values = c("TRS" = "blue", "ORP" = "orange")) +
+  theme_minimal()
+
+# ORP Balance Depletion
+orp_balance_data <- data.frame(
+  Time = seq(1, years_retired, by = 1),
+  Balance = orp_balance_projection
+)
+
+ggplot(orp_balance_data, aes(x = Time, y = Balance)) +
+  geom_line(color = "red") +
+  labs(
+    title = "ORP Balance Over Retirement",
+    x = "Years in Retirement",
+    y = "Balance ($)"
+  ) +
+  theme_minimal()
+```
+
+Now, this is even more interesting. Beforehand I would recommend that the ORP would be a better option for someone to take. However, it truly seems that The TRS motto of income for the entirety of your unemployment is true. The ORP seems to start out with a large lump sum, but after 20 years in a fixed income plan of a bit over a \$1000 a month the ORP well dries out. Now, as a financial adviser I would say both plans are well thought out. The decision in which one to undergo is up to your personal threshold of risk and how long you plan to be under retirement income. If you plan on being retired for a long time, the TRS is the right choice for you. If you plan on not being retired for a long time and want to pass along a large lump sum of money to family and children or simply live lavishly for ten years I would say the ORP is a better choice. Also, I would like to reiterate that this does not account for large jumps in salary while you are still employed.
